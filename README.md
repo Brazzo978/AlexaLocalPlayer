@@ -102,10 +102,15 @@ integrazione con librerie locali, ecc.).
 
 ## Integrazione con la skill Alexa
 
-1. Nella skill, configurate l'endpoint HTTPS (o tramite tunneling) che punti al server.
+Per una guida dettagliata alla configurazione della skill e delle risorse AWS correlate consultate
+[`docs/guida_configurazione_skill.md`](docs/guida_configurazione_skill.md).
+
+Di seguito un riepilogo sintetico del flusso di integrazione:
+
+1. Nella skill, configurate l'endpoint HTTPS (o tramite tunneling) che punti al server o alla Lambda.
 2. Quando la skill riceve il titolo del brano, invia una richiesta `POST` a
    `https://<server>/api/v1/songs/request` con payload JSON `{ "song": "Titolo" }`.
-3. La skill riceve in risposta `stream_url`, un link diretto al file audio.
+3. Il server risponde con `stream_url`, un link diretto al file audio.
 4. Passate `stream_url` al `AudioPlayer` dell'SDK Alexa per avviare la riproduzione.
 
 ## Troubleshooting
