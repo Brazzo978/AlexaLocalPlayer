@@ -1,20 +1,38 @@
 # Guida alla configurazione della skill Alexa
 
 Questa guida descrive in dettaglio come creare e configurare una skill Alexa che si integri con il
-servizio esposto da **Alexa Local Player**. I passaggi sono organizzati in tre fasi:
+servizio esposto da **Alexa Local Player**. Il focus principale è permettervi di self-hostare
+l'intera soluzione senza dover ricorrere a servizi a pagamento su AWS. I passaggi sono organizzati
+in tre fasi:
 
-1. Preparazione dell'infrastruttura AWS necessaria.
+1. Pubblicazione dell'endpoint HTTPS self-hosted (o scelta di un'alternativa).
 2. Creazione della skill nella Alexa Developer Console.
 3. Collegamento della skill al server locale (o container) che ospita Alexa Local Player.
 
 > **Prerequisiti**
 >
 > * Un account Amazon Developer (developer.amazon.com) con accesso alla console.
-> * Un account AWS attivo con permessi per creare risorse IAM, Lambda e API Gateway.
 > * L'endpoint HTTP pubblico del servizio Alexa Local Player (ad esempio tramite tunnel HTTPS,
->   reverse proxy o pubblicazione su internet).
+>   reverse proxy o pubblicazione su internet) **senza** ricorrere a servizi AWS.
 
-## 1. Preparazione dell'infrastruttura AWS
+## 1. Pubblicare un endpoint HTTPS self-hosted
+
+Per evitare costi su AWS dovete rendere raggiungibile il vostro server Alexa Local Player tramite
+un endpoint HTTPS valido direttamente dalla vostra infrastruttura. Sono possibili varie soluzioni:
+
+* **Reverse proxy**: esponete il server tramite Nginx/Traefik con certificato TLS (Let's Encrypt).
+* **Tunnel HTTPS**: usate strumenti come Cloudflare Tunnel, Tailscale Funnel, Ngrok free tier o
+  soluzioni self-hosted come inlets o rinetd per pubblicare temporaneamente l'endpoint.
+* **Hosting domestico o VPS**: posizionate Alexa Local Player su una macchina accessibile via
+  internet con certificato valido.
+
+Assicuratevi che l'endpoint sia raggiungibile via `https://` e che risponda alle richieste provenienti
+dagli IP di Alexa. Solo dopo aver garantito questo requisito potete procedere con la creazione della
+skill.
+
+Se, nonostante l'obiettivo di self-hosting, preferite demandare la gestione dell'endpoint ad AWS, potete
+seguire i passaggi opzionali riportati di seguito. Tenete presente che l'utilizzo di Lambda/API Gateway
+può generare costi se superate le free tier.
 
 ### 1.1 Creare un ruolo IAM per la funzione Lambda (opzionale ma consigliato)
 
@@ -105,8 +123,9 @@ servizio esposto da **Alexa Local Player**. I passaggi sono organizzati in tre f
    la skill ha tempo di attendere la risposta del server.
 6. Salvate e testate la funzione con un **test event** modellato su una richiesta Alexa standard.
 
-> In alternativa alla Lambda, potete configurare direttamente l'endpoint HTTPS nel developer portal
-> se il vostro server Alexa Local Player è raggiungibile da internet con certificato valido.
+> **Suggerimento per il self-hosting**: se il vostro server Alexa Local Player è già raggiungibile da
+> internet con certificato valido, potete saltare completamente la configurazione Lambda e usare il
+> vostro endpoint diretto nella Developer Console.
 
 ### 1.3 (Opzionale) Pubblicare l'endpoint via API Gateway
 
