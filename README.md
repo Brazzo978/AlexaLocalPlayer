@@ -93,6 +93,34 @@ integrazione con librerie locali, ecc.).
 
 3. Testare il servizio come descritto nella sezione precedente.
 
+### Esecuzione dietro proxy HTTPS
+
+Quando il server è pubblicato su Internet tramite un reverse proxy (ad esempio Nginx,
+Caddy o Traefik) è importante che gli URL restituiti al dispositivo Alexa usino lo
+stesso dominio HTTPS pubblico del proxy. In uno scenario tipico il proxy termina TLS e
+inoltra le richieste HTTP al container sulla porta 8000.
+
+Un esempio di comando `docker run` potrebbe essere:
+
+```bash
+docker run -d --name alexa-player \
+  -p 8000:8000 \
+  -v /srv/alexa/temp:/temp \
+  -v /opt/alexa/mock_song.sh:/root/mock_song.sh:ro \
+  -e TEMP_DIR=/temp \
+  -e SONG_COMMAND="/root/mock_song.sh {song}" \
+  -e PUBLIC_BASE_URL="https://il-tuo-dominio.example.com" \
+  -e PLAYER_API="https://il-tuo-dominio.example.com" \
+  -e ASK_SKILL_ID="amzn1.ask.skill.xxxxx" \
+  -e VERIFY_ALEXA=true \
+  alexa-local-player:latest
+```
+
+Assicuratevi che `https://il-tuo-dominio.example.com` sia raggiungibile pubblicamente e
+con un certificato valido: è l'URL che Alexa utilizzerà per scaricare il file audio
+(`stream_url`). Se il proxy risponde su una porta diversa dalla 443, includetela nel
+valore di `PUBLIC_BASE_URL`/`PLAYER_API` (ad esempio `https://dominio:8443`).
+
 ### Utilizzo in produzione
 
 * Configurate `PUBLIC_BASE_URL` con l'indirizzo pubblico raggiungibile dalla skill Alexa (es. tunnel HTTPS).
