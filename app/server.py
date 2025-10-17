@@ -42,13 +42,45 @@ def launch_handler(handler_input):
     app.logger.info("LaunchRequest")
     url = f"{PLAYER_API}/api/v1/songs/request"
     payload = {"song": "burn-di-ellie-goulding"}
-    response = requests.post(url, json=payload, timeout=10)
-    app.logger.info(
-        "Player API status=%s body=%s", response.status_code, response.text[:1000]
-    )
-    response.raise_for_status()
 
-    stream_url = response.json()["stream_url"]
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        app.logger.info(
+            "Player API status=%s body=%s", response.status_code, response.text[:1000]
+        )
+        response.raise_for_status()
+    except requests.exceptions.RequestException as exc:
+        app.logger.error("Player API request failed: %s", exc, exc_info=True)
+        return (
+            handler_input.response_builder.speak(
+                "Al momento non riesco a riprodurre musica. Riprova tra qualche minuto."
+            )
+            .set_should_end_session(True)
+            .response
+        )
+
+    try:
+        payload = response.json()
+    except ValueError:
+        app.logger.error("Player API returned invalid JSON: %s", response.text[:1000])
+        return (
+            handler_input.response_builder.speak(
+                "C'è stato un problema con il player. Riprova più tardi."
+            )
+            .set_should_end_session(True)
+            .response
+        )
+
+    stream_url = payload.get("stream_url")
+    if not stream_url:
+        app.logger.error("Player API response missing stream_url: %s", payload)
+        return (
+            handler_input.response_builder.speak(
+                "Non riesco a riprodurre il brano richiesto in questo momento."
+            )
+            .set_should_end_session(True)
+            .response
+        )
 
     stream = Stream(token="burn-token", url=stream_url, offset_in_milliseconds=0)
     handler_input.response_builder \
