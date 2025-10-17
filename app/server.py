@@ -59,15 +59,14 @@ alexa_handler = WebserviceSkillHandler(
     skill=skill,
     verify_signature=True,
     verify_timestamp=True,
-    supported_application_ids=[ASK_SKILL_ID] if ASK_SKILL_ID else None,
 )
 
 
 @app.post("/")
 def alexa_entry():
-    body = request.get_data()
+    body = request.get_data(as_text=True)
     result = alexa_handler.verify_request_and_dispatch(dict(request.headers), body)
-    return Response(alexa_handler.serialize_response(result), 200, mimetype="application/json")
+    return Response(result, 200, mimetype="application/json")
 
 
 @app.get("/health")
