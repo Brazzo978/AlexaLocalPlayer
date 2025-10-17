@@ -54,6 +54,42 @@ def launch_handler(handler_input):
     return handler_input.response_builder.response
 
 
+@skill_builder.request_handler(can_handle_func=is_request_type("AudioPlayer.PlaybackStarted"))
+def _ap_started(handler_input):
+    return handler_input.response_builder.response
+
+
+@skill_builder.request_handler(can_handle_func=is_request_type("AudioPlayer.PlaybackFinished"))
+def _ap_finished(handler_input):
+    return handler_input.response_builder.response
+
+
+@skill_builder.request_handler(can_handle_func=is_request_type("AudioPlayer.PlaybackStopped"))
+def _ap_stopped(handler_input):
+    return handler_input.response_builder.response
+
+
+@skill_builder.request_handler(can_handle_func=is_request_type("AudioPlayer.PlaybackNearlyFinished"))
+def _ap_nearly(handler_input):
+    return handler_input.response_builder.response
+
+
+@skill_builder.request_handler(can_handle_func=is_request_type("AudioPlayer.PlaybackFailed"))
+def _ap_failed(handler_input):
+    return handler_input.response_builder.response
+
+
+@skill_builder.request_handler(can_handle_func=is_request_type("SessionEndedRequest"))
+def _session_end(handler_input):
+    return handler_input.response_builder.response
+
+
+@skill_builder.exception_handler(can_handle_func=lambda handler_input, exception: True)
+def _on_error(handler_input, exception):
+    app.logger.error("ASK ERROR: %s", exception, exc_info=True)
+    return handler_input.response_builder.response
+
+
 skill = skill_builder.create()
 alexa_handler = WebserviceSkillHandler(
     skill=skill,
