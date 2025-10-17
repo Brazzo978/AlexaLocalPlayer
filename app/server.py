@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from urllib.parse import urljoin
@@ -28,6 +27,7 @@ logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 LOGGER = logging.getLogger(__name__)
 
 ASK_SKILL_ID = os.getenv("ASK_SKILL_ID")
+VERIFY_ALEXA = os.getenv("VERIFY_ALEXA", "true").lower() == "true"
 PLAYER_API = os.getenv("PLAYER_API", "http://127.0.0.1:8000")
 
 app = Flask(__name__)
@@ -39,24 +39,16 @@ skill_builder = SkillBuilder()
 
 @skill_builder.request_handler(can_handle_func=is_request_type("LaunchRequest"))
 def launch_handler(handler_input):
-    app.logger.info("LaunchRequest ricevuta")
+    app.logger.info("LaunchRequest")
     url = f"{PLAYER_API}/api/v1/songs/request"
     payload = {"song": "burn-di-ellie-goulding"}
-    app.logger.info("Chiamo player API: %s payload=%s", url, json.dumps(payload))
-
-    response = requests.post(
-        url,
-        json=payload,
-        timeout=10,
-    )
+    response = requests.post(url, json=payload, timeout=10)
     app.logger.info(
         "Player API status=%s body=%s", response.status_code, response.text[:1000]
     )
     response.raise_for_status()
 
-    data = response.json()
-    stream_url = data.get("stream_url")
-    app.logger.info("stream_url: %s", stream_url)
+    stream_url = response.json()["stream_url"]
 
     stream = Stream(token="burn-token", url=stream_url, offset_in_milliseconds=0)
     handler_input.response_builder \
@@ -71,34 +63,24 @@ def launch_handler(handler_input):
     return handler_input.response_builder.response
 
 
-@skill_builder.request_handler(can_handle_func=is_request_type("AudioPlayer.PlaybackStarted"))
-def _ap_started(handler_input):
-    return handler_input.response_builder.response
+def _register_noop(event_type: str):
+
+    @skill_builder.request_handler(can_handle_func=is_request_type(event_type))
+    def _noop(handler_input):
+        return handler_input.response_builder.response
+
+    return _noop
 
 
-@skill_builder.request_handler(can_handle_func=is_request_type("AudioPlayer.PlaybackFinished"))
-def _ap_finished(handler_input):
-    return handler_input.response_builder.response
-
-
-@skill_builder.request_handler(can_handle_func=is_request_type("AudioPlayer.PlaybackStopped"))
-def _ap_stopped(handler_input):
-    return handler_input.response_builder.response
-
-
-@skill_builder.request_handler(can_handle_func=is_request_type("AudioPlayer.PlaybackNearlyFinished"))
-def _ap_nearly(handler_input):
-    return handler_input.response_builder.response
-
-
-@skill_builder.request_handler(can_handle_func=is_request_type("AudioPlayer.PlaybackFailed"))
-def _ap_failed(handler_input):
-    return handler_input.response_builder.response
-
-
-@skill_builder.request_handler(can_handle_func=is_request_type("SessionEndedRequest"))
-def _session_end(handler_input):
-    return handler_input.response_builder.response
+for event_type in [
+    "AudioPlayer.PlaybackStarted",
+    "AudioPlayer.PlaybackFinished",
+    "AudioPlayer.PlaybackStopped",
+    "AudioPlayer.PlaybackNearlyFinished",
+    "AudioPlayer.PlaybackFailed",
+    "SessionEndedRequest",
+]:
+    _register_noop(event_type)
 
 
 @skill_builder.exception_handler(can_handle_func=lambda handler_input, exception: True)
@@ -112,8 +94,9 @@ def _on_error(handler_input, exception):
 skill = skill_builder.create()
 alexa_handler = WebserviceSkillHandler(
     skill=skill,
-    verify_signature=True,
-    verify_timestamp=True,
+    verify_signature=VERIFY_ALEXA,
+    verify_timestamp=VERIFY_ALEXA,
+    supported_application_ids=[ASK_SKILL_ID] if ASK_SKILL_ID else None,
 )
 
 
@@ -131,13 +114,20 @@ def alexa_entry():
     }
     body_str = request.get_data(as_text=True)
 
-    app.logger.info("ASK req headers: %s", list(masked.keys()))
+    app.logger.info("ASK req headers: %s", masked)
     app.logger.info("ASK req body: %s", body_str[:2000])
 
     resp_str = alexa_handler.verify_request_and_dispatch(hdrs, body_str)
 
     app.logger.info("ASK resp: %s", resp_str)
     return Response(resp_str, 200, mimetype="application/json")
+
+
+@app.after_request
+def _log_ask_response(resp):
+    if request.path == "/":
+        app.logger.info("ASK resp body: %s", resp.get_data(as_text=True)[:2000])
+    return resp
 
 
 @app.get("/health")
