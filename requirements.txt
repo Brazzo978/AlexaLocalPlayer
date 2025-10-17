@@ -1,4 +1,4 @@
 Flask>=2.3,<3.0
-ask-sdk-core==1.26.3
-ask-sdk-webservice-support==1.26.3
+ask-sdk-core==1.19.0
+ask-sdk-webservice-support==1.19.0
 requests==2.32.3
