@@ -28,8 +28,8 @@ logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 LOGGER = logging.getLogger(__name__)
 
 ASK_SKILL_ID = os.getenv("ASK_SKILL_ID")
-VERIFY_ALEXA = os.getenv("VERIFY_ALEXA", "true").lower() == "true"
 PLAYER_API = os.getenv("PLAYER_API", "http://127.0.0.1:8000")
+VERIFY_ALEXA = os.getenv("VERIFY_ALEXA", "true").lower() == "true"
 
 app = Flask(__name__)
 app.logger.setLevel(logging.INFO)
@@ -40,88 +40,83 @@ skill_builder = SkillBuilder()
 
 @skill_builder.request_handler(can_handle_func=is_request_type("LaunchRequest"))
 def launch_handler(handler_input):
-    app.logger.info("LaunchRequest")
+    LOGGER.info("LaunchRequest")
     url = f"{PLAYER_API}/api/v1/songs/request"
     payload = {"song": "burn-di-ellie-goulding"}
 
     try:
         response = requests.post(url, json=payload, timeout=10)
-        app.logger.info(
+        LOGGER.info(
             "Player API status=%s body=%s", response.status_code, response.text[:1000]
         )
         response.raise_for_status()
-    except requests.exceptions.RequestException as exc:
-        app.logger.error("Player API request failed: %s", exc, exc_info=True)
-        return (
-            handler_input.response_builder.speak(
-                "Al momento non riesco a riprodurre musica. Riprova tra qualche minuto."
-            )
-            .set_should_end_session(True)
-            .response
-        )
-
-    try:
         payload = response.json()
-    except ValueError:
-        app.logger.error("Player API returned invalid JSON: %s", response.text[:1000])
-        return (
-            handler_input.response_builder.speak(
-                "C'è stato un problema con il player. Riprova più tardi."
-            )
-            .set_should_end_session(True)
-            .response
-        )
-
-    stream_url = payload.get("stream_url")
-    if not stream_url:
-        app.logger.error("Player API response missing stream_url: %s", payload)
-        return (
-            handler_input.response_builder.speak(
-                "Non riesco a riprodurre il brano richiesto in questo momento."
-            )
-            .set_should_end_session(True)
-            .response
-        )
+        stream_url = payload["stream_url"]
+    except Exception as exc:  # noqa: BLE001 - log and return a valid response to Alexa
+        LOGGER.exception("Errore player API: %s", exc, exc_info=True)
+        handler_input.response_builder.speak(
+            "C'è stato un problema con il player. Riprova più tardi."
+        ).set_should_end_session(True)
+        return handler_input.response_builder.response
 
     stream = Stream(token="burn-token", url=stream_url, offset_in_milliseconds=0)
-    handler_input.response_builder \
-        .speak("Riproduco Burn di Ellie Goulding") \
-        .set_should_end_session(True) \
-        .add_directive(
-            PlayDirective(
-                play_behavior=PlayBehavior.REPLACE_ALL,
-                audio_item=AudioItem(stream=stream),
-            )
+    handler_input.response_builder.speak("Riproduco Burn di Ellie Goulding").add_directive(
+        PlayDirective(
+            play_behavior=PlayBehavior.REPLACE_ALL,
+            audio_item=AudioItem(stream=stream),
         )
+    ).set_should_end_session(True)
     return handler_input.response_builder.response
 
 
-def _register_noop(event_type: str):
-
-    @skill_builder.request_handler(can_handle_func=is_request_type(event_type))
-    def _noop(handler_input):
-        return handler_input.response_builder.response
-
-    return _noop
+@skill_builder.request_handler(can_handle_func=is_request_type("AudioPlayer.PlaybackStarted"))
+def on_playback_started(handler_input):
+    LOGGER.info("AudioPlayer.PlaybackStarted")
+    return handler_input.response_builder.response
 
 
-for event_type in [
-    "AudioPlayer.PlaybackStarted",
-    "AudioPlayer.PlaybackFinished",
-    "AudioPlayer.PlaybackStopped",
-    "AudioPlayer.PlaybackNearlyFinished",
-    "AudioPlayer.PlaybackFailed",
-    "SessionEndedRequest",
-]:
-    _register_noop(event_type)
+@skill_builder.request_handler(can_handle_func=is_request_type("AudioPlayer.PlaybackFinished"))
+def on_playback_finished(handler_input):
+    LOGGER.info("AudioPlayer.PlaybackFinished")
+    return handler_input.response_builder.response
+
+
+@skill_builder.request_handler(can_handle_func=is_request_type("AudioPlayer.PlaybackStopped"))
+def on_playback_stopped(handler_input):
+    LOGGER.info("AudioPlayer.PlaybackStopped")
+    return handler_input.response_builder.response
+
+
+@skill_builder.request_handler(
+    can_handle_func=is_request_type("AudioPlayer.PlaybackNearlyFinished")
+)
+def on_playback_nearly_finished(handler_input):
+    LOGGER.info("AudioPlayer.PlaybackNearlyFinished")
+    return handler_input.response_builder.response
+
+
+@skill_builder.request_handler(can_handle_func=is_request_type("AudioPlayer.PlaybackFailed"))
+def on_playback_failed(handler_input):
+    request_envelope = handler_input.request_envelope.request
+    LOGGER.error(
+        "AudioPlayer.PlaybackFailed: error=%s state=%s",
+        getattr(request_envelope, "error", None),
+        getattr(request_envelope, "current_playback_state", None),
+    )
+    return handler_input.response_builder.response
+
+
+@skill_builder.request_handler(can_handle_func=is_request_type("SessionEndedRequest"))
+def on_session_ended(handler_input):
+    LOGGER.info("SessionEndedRequest: %s", handler_input.request_envelope.request.reason)
+    return handler_input.response_builder.response
 
 
 @skill_builder.exception_handler(can_handle_func=lambda handler_input, exception: True)
-def _on_error(handler_input, exception):
-    app.logger.error("ASK ERROR: %s", exception, exc_info=True)
-    return handler_input.response_builder.speak(
-        "Errore temporaneo del player. Riprova."
-    ).response
+def all_exception_handler(handler_input, exception):
+    LOGGER.exception("Alexa exception: %s", exception, exc_info=True)
+    handler_input.response_builder.speak("Si è verificato un errore inatteso. Riprovo.")
+    return handler_input.response_builder.response
 
 
 skill = skill_builder.create()
@@ -129,6 +124,7 @@ alexa_handler = WebserviceSkillHandler(
     skill=skill,
     verify_signature=VERIFY_ALEXA,
     verify_timestamp=VERIFY_ALEXA,
+    supported_application_ids=[ASK_SKILL_ID] if ASK_SKILL_ID else None,
 )
 
 
@@ -159,32 +155,25 @@ if VERIFY_ALEXA and ASK_SKILL_ID:
 
 @app.post("/")
 def alexa_entry():
-    hdrs = dict(request.headers)
-    masked = {
-        key: (
-            "***redacted***"
-            if key.lower()
-            in {"signature", "signature-256", "signaturecertchainurl", "authorization"}
-            else value
+    body = request.get_data()
+    hdrs = {k: v for k, v in request.headers.items()}
+
+    LOGGER.info("ASK req headers: %s", hdrs)
+    LOGGER.info("ASK req body: %s", body.decode("utf-8", errors="ignore"))
+
+    result = alexa_handler.verify_request_and_dispatch(hdrs, body)
+    resp_body = alexa_handler.serialize_response(result)
+
+    LOGGER.info("ASK resp: %s", result)
+    try:
+        LOGGER.info(
+            "ASK resp body: %s",
+            "".join(result.response.__dict__.keys()) if result.response else resp_body,
         )
-        for key, value in hdrs.items()
-    }
-    body_str = request.get_data(as_text=True)
+    except Exception:  # noqa: BLE001 - defensive logging
+        pass
 
-    app.logger.info("ASK req headers: %s", masked)
-    app.logger.info("ASK req body: %s", body_str[:2000])
-
-    resp_str = alexa_handler.verify_request_and_dispatch(hdrs, body_str)
-
-    app.logger.info("ASK resp: %s", resp_str)
-    return Response(resp_str, 200, mimetype="application/json")
-
-
-@app.after_request
-def _log_ask_response(resp):
-    if request.path == "/":
-        app.logger.info("ASK resp body: %s", resp.get_data(as_text=True)[:2000])
-    return resp
+    return Response(resp_body, 200, mimetype="application/json")
 
 
 @app.get("/health")
