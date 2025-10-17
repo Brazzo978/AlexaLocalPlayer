@@ -8,6 +8,7 @@ from urllib.parse import urljoin
 
 import requests
 from flask import Flask, Response, abort, jsonify, request, send_file
+from ask_sdk_core.exceptions import AskSdkException
 from ask_sdk_core.skill_builder import SkillBuilder
 from ask_sdk_core.utils import is_request_type
 from ask_sdk_model.interfaces.audioplayer import (
@@ -128,8 +129,32 @@ alexa_handler = WebserviceSkillHandler(
     skill=skill,
     verify_signature=VERIFY_ALEXA,
     verify_timestamp=VERIFY_ALEXA,
-    supported_application_ids=[ASK_SKILL_ID] if ASK_SKILL_ID else None,
 )
+
+
+def _extract_application_id(handler_input) -> str | None:
+    envelope = handler_input.request_envelope
+
+    if envelope.session and envelope.session.application:
+        return envelope.session.application.application_id
+
+    system = envelope.context.system if envelope.context else None
+    if system and system.application:
+        return system.application.application_id
+
+    return None
+
+
+if VERIFY_ALEXA and ASK_SKILL_ID:
+
+    @skill_builder.global_request_interceptor()
+    def _verify_application_id(handler_input):
+        application_id = _extract_application_id(handler_input)
+
+        if application_id != ASK_SKILL_ID:
+            raise AskSdkException(
+                f"Unexpected Alexa skill id '{application_id}'"
+            )
 
 
 @app.post("/")
