@@ -17,7 +17,7 @@ from ask_sdk_model.interfaces.audioplayer import (
     Stream,
 )
 from ask_sdk_webservice_support.webservice_handler import (
-    WebserviceSkillRequestHandler,
+    WebserviceSkillHandler,
 )
 
 from .config import settings
@@ -55,7 +55,7 @@ def launch_handler(handler_input):
 
 
 skill = skill_builder.create()
-alexa_handler = WebserviceSkillRequestHandler(
+alexa_handler = WebserviceSkillHandler(
     skill=skill,
     verify_signature=True,
     verify_timestamp=True,
@@ -66,7 +66,7 @@ alexa_handler = WebserviceSkillRequestHandler(
 @app.post("/")
 def alexa_entry():
     body = request.get_data()
-    result = alexa_handler.verify_request_and_dispatch(body, dict(request.headers))
+    result = alexa_handler.verify_request_and_dispatch(dict(request.headers), body)
     return Response(alexa_handler.serialize_response(result), 200, mimetype="application/json")
 
 
