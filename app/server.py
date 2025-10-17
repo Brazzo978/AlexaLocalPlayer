@@ -6,7 +6,19 @@ import logging
 import os
 from urllib.parse import urljoin
 
-from flask import Flask, abort, jsonify, request, send_file
+import requests
+from flask import Flask, Response, abort, jsonify, request, send_file
+from ask_sdk_core.skill_builder import SkillBuilder
+from ask_sdk_core.utils import is_request_type
+from ask_sdk_model.interfaces.audioplayer import (
+    AudioItem,
+    PlayBehavior,
+    PlayDirective,
+    Stream,
+)
+from ask_sdk_webservice_support.webservice_handler import (
+    WebserviceSkillRequestHandler,
+)
 
 from .config import settings
 from .song_manager import SongAcquisitionError, SongManager
@@ -14,8 +26,53 @@ from .song_manager import SongAcquisitionError, SongManager
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 LOGGER = logging.getLogger(__name__)
 
+ASK_SKILL_ID = os.getenv("ASK_SKILL_ID")
+PLAYER_API = os.getenv("PLAYER_API", "http://127.0.0.1:8000")
+
 app = Flask(__name__)
 manager = SongManager(settings)
+
+skill_builder = SkillBuilder()
+
+
+@skill_builder.request_handler(can_handle_func=is_request_type("LaunchRequest"))
+def launch_handler(handler_input):
+    response = requests.post(
+        f"{PLAYER_API}/api/v1/songs/request",
+        json={"song": "burn-di-ellie-goulding"},
+        timeout=10,
+    )
+    response.raise_for_status()
+    stream_url = response.json()["stream_url"]
+    stream = Stream(token="burn-token", url=stream_url, offset_in_milliseconds=0)
+    handler_input.response_builder.speak("Riproduco Burn di Ellie Goulding").add_directive(
+        PlayDirective(
+            play_behavior=PlayBehavior.REPLACE_ALL,
+            audio_item=AudioItem(stream=stream),
+        )
+    )
+    return handler_input.response_builder.response
+
+
+skill = skill_builder.create()
+alexa_handler = WebserviceSkillRequestHandler(
+    skill=skill,
+    verify_signature=True,
+    verify_timestamp=True,
+    supported_application_ids=[ASK_SKILL_ID] if ASK_SKILL_ID else None,
+)
+
+
+@app.post("/")
+def alexa_entry():
+    body = request.get_data()
+    result = alexa_handler.verify_request_and_dispatch(body, dict(request.headers))
+    return Response(alexa_handler.serialize_response(result), 200, mimetype="application/json")
+
+
+@app.get("/health")
+def health() -> tuple[str, int]:
+    return "ok", 200
 
 
 @app.post("/api/v1/songs/request")
