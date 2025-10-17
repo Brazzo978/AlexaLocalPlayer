@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from urllib.parse import urljoin
@@ -30,6 +31,7 @@ ASK_SKILL_ID = os.getenv("ASK_SKILL_ID")
 PLAYER_API = os.getenv("PLAYER_API", "http://127.0.0.1:8000")
 
 app = Flask(__name__)
+app.logger.setLevel(logging.INFO)
 manager = SongManager(settings)
 
 skill_builder = SkillBuilder()
@@ -37,20 +39,35 @@ skill_builder = SkillBuilder()
 
 @skill_builder.request_handler(can_handle_func=is_request_type("LaunchRequest"))
 def launch_handler(handler_input):
+    app.logger.info("LaunchRequest ricevuta")
+    url = f"{PLAYER_API}/api/v1/songs/request"
+    payload = {"song": "burn-di-ellie-goulding"}
+    app.logger.info("Chiamo player API: %s payload=%s", url, json.dumps(payload))
+
     response = requests.post(
-        f"{PLAYER_API}/api/v1/songs/request",
-        json={"song": "burn-di-ellie-goulding"},
+        url,
+        json=payload,
         timeout=10,
     )
-    response.raise_for_status()
-    stream_url = response.json()["stream_url"]
-    stream = Stream(token="burn-token", url=stream_url, offset_in_milliseconds=0)
-    handler_input.response_builder.speak("Riproduco Burn di Ellie Goulding").add_directive(
-        PlayDirective(
-            play_behavior=PlayBehavior.REPLACE_ALL,
-            audio_item=AudioItem(stream=stream),
-        )
+    app.logger.info(
+        "Player API status=%s body=%s", response.status_code, response.text[:1000]
     )
+    response.raise_for_status()
+
+    data = response.json()
+    stream_url = data.get("stream_url")
+    app.logger.info("stream_url: %s", stream_url)
+
+    stream = Stream(token="burn-token", url=stream_url, offset_in_milliseconds=0)
+    handler_input.response_builder \
+        .speak("Riproduco Burn di Ellie Goulding") \
+        .set_should_end_session(True) \
+        .add_directive(
+            PlayDirective(
+                play_behavior=PlayBehavior.REPLACE_ALL,
+                audio_item=AudioItem(stream=stream),
+            )
+        )
     return handler_input.response_builder.response
 
 
@@ -87,7 +104,9 @@ def _session_end(handler_input):
 @skill_builder.exception_handler(can_handle_func=lambda handler_input, exception: True)
 def _on_error(handler_input, exception):
     app.logger.error("ASK ERROR: %s", exception, exc_info=True)
-    return handler_input.response_builder.response
+    return handler_input.response_builder.speak(
+        "Errore temporaneo del player. Riprova."
+    ).response
 
 
 skill = skill_builder.create()
@@ -100,9 +119,25 @@ alexa_handler = WebserviceSkillHandler(
 
 @app.post("/")
 def alexa_entry():
-    body = request.get_data(as_text=True)
-    result = alexa_handler.verify_request_and_dispatch(dict(request.headers), body)
-    return Response(result, 200, mimetype="application/json")
+    hdrs = dict(request.headers)
+    masked = {
+        key: (
+            "***redacted***"
+            if key.lower()
+            in {"signature", "signature-256", "signaturecertchainurl", "authorization"}
+            else value
+        )
+        for key, value in hdrs.items()
+    }
+    body_str = request.get_data(as_text=True)
+
+    app.logger.info("ASK req headers: %s", list(masked.keys()))
+    app.logger.info("ASK req body: %s", body_str[:2000])
+
+    resp_str = alexa_handler.verify_request_and_dispatch(hdrs, body_str)
+
+    app.logger.info("ASK resp: %s", resp_str)
+    return Response(resp_str, 200, mimetype="application/json")
 
 
 @app.get("/health")
